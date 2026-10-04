@@ -1,0 +1,60 @@
+SSH Log Analysis & Brute-Force Detection using Splunk
+
+SPL Queries Used
+================
+Failed SSH Logins
+index=main sourcetype=linux_secure "Failed password"
+| stats count
+Top Targeted Usernames
+index=main sourcetype=linux_secure "Failed password"
+| rex "Failed password for (?:invalid user )?(?<user>\S+) from"
+| stats count by user
+| sort - count
+Top Failed-Login query
+index=main sourcetype=linux_secure "Failed password"
+| rex "from (?<src_ip>\d{1,3}(?:\.\d{1,3}){3})"
+| stats count by src_ip
+| sort - count
+Successful SSH Logins
+index=main sourcetype=linux_secure "Accepted"
+| stats count
+Correlate failed and successful logins
+index=main sourcetype=linux_secure
+| eval login_status=case(
+    match(_raw,"Failed password"),"Failed",
+    match(_raw,"Accepted"),"Success"
+  )
+| rex "from (?<src_ip>\d{1,3}(?:\.\d{1,3}){3})"
+| search src_ip=*
+| stats count(eval(login_status="Failed")) as failed_count
+        count(eval(login_status="Success")) as success_count
+        by src_ip
+| where failed_count > 0 AND success_count > 0
+| sort - failed_count
+Potential brute-force source
+index=main sourcetype=linux_secure
+| eval login_status=case(
+    match(_raw,"Failed password"),"Failed",
+    match(_raw,"Accepted"),"Success"
+  )
+| rex "from (?<src_ip>\d{1,3}(?:\.\d{1,3}){3})"
+| search src_ip=*
+| stats count(eval(login_status="Failed")) as failed_count
+        count(eval(login_status="Success")) as success_count
+        by src_ip
+| where failed_count > 0 AND success_count > 0
+| sort - failed_count
+SSH login actiity timeline
+SSH Login Activity Timeline
+
+index=main sourcetype=linux_secure "203.0.113.50"
+| rex "Failed password for (?:invalid user )?(?<user>\S+) from"
+| rex "Accepted (?:password|publickey) for (?<success_user>\S+) from"
+| eval status=case(
+    match(_raw,"Failed password"),"FAILED",
+    match(_raw,"Accepted"),"SUCCESS",
+    true(),"OTHER"
+  )
+| table _time status user success_user
+| sort _time
+
